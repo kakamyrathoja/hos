@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import apiRoutes from './routes/api';
+import { globalLimiter } from './middlewares/rateLimiter';
 
 dotenv.config();
 
@@ -11,10 +12,12 @@ const app = express();
 export const prisma = new PrismaClient();
 
 // Middleware
+app.set('trust proxy', 1); // Vercel/Cloudflare arkasında gerçek IP için
 app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use('/api', globalLimiter);
 
 app.use((req, res, next) => {
   res.setHeader('ngrok-skip-browser-warning', 'true');
@@ -37,4 +40,5 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
+// Vercel serverless export
 export default app;
