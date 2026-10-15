@@ -1,4 +1,3 @@
-import nodemailer from 'nodemailer';
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -6,58 +5,105 @@ import { prisma } from '../index';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 
-
 const generateReferralCode = (name: string): string => {
   const prefix = name.substring(0, 3).toUpperCase();
   const randomNum = Math.floor(1000 + Math.random() * 9000);
-  return `${prefix}${randomNum}`;
+  return prefix + randomNum;
+};
+
+const generateNickname = (email: string, firstName: string): string => {
+  const base = (email.split('@')[0] || firstName || 'user')
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '')
+    .substring(0, 15);
+  const random = Math.floor(100 + Math.random() * 900);
+  return base + random;
+};
+
+const findUniqueNickname = async (email: string, firstName: string): Promise<string> => {
+  for (let i = 0; i < 5; i++) {
+    const candidate = generateNickname(email, firstName);
+    const existing = await (prisma as any).user.findFirst({
+      where: { nickname: { equals: candidate, mode: 'insensitive' } }
+    });
+    if (!existing) return candidate;
+  }
+  return generateNickname(email, firstName) + Date.now().toString().slice(-4);
 };
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { firstName, lastName, nickname, email, verificationCode, password, referralCode, fcmToken } = req.body;
+    const { firstName, lastName, email, verificationCode, password, referralCode, fcmToken, nickname: providedNick } = req.body;
 
-    if (!firstName || !lastName || !nickname || !email || !password) {
-      res.status(400).json({ message: 'Lütfen tüm alanları doldurun.' }); return;
+    if (!firstName || !lastName || !email || !password) {
+      res.status(400).json({ message: 'Lutfen tum alanlari doldurun.' });
+      return;
     }
 
     if (String(password).length < 8) {
-      res.status(400).json({ message: 'Şifre en az 8 karakter uzunluğunda olmalıdır.' }); return;
+      res.status(400).json({ message: 'Sifre en az 8 karakter uzunlugunda olmalidir.' });
+      return;
     }
 
-    const nameRegex = /^[a-zA-ZğüşıöçĞÜŞİÖÇÄäŽžŇňÝýА-Яа-я\s]{2,50}$/;
+    const nameRegex = /^[a-zA-Z\s]{2,50}$/;
     if (!nameRegex.test(String(firstName).trim()) || !nameRegex.test(String(lastName).trim())) {
-      res.status(400).json({ message: 'Lütfen geçerli bir ad ve soyad girin.' }); return;
-    }
-    
-    // Nickname bosluk veya ozel isaret icermesin, sadece harf ve rakam
-    const nickRegex = /^[a-zA-Z0-9_]{3,20}$/;
-    if (!nickRegex.test(String(nickname).trim())) {
-      res.status(400).json({ message: 'Kullanıcı adı sadece harf, rakam ve alt çizgi (_) içerebilir ve en az 3 karakter olmalıdır.' }); return;
+      res.status(400).json({ message: 'Lutfen gecerli bir ad ve soyad girin.' });
+      return;
     }
 
-    if (!verificationCode) { res.status(400).json({ message: 'Doğrulama kodu gerekli' }); return; }
+    if (!verificationCode) {
+      res.status(400).json({ message: 'Dogrulama kodu gerekli' });
+      return;
+    }
 
-    const existingEmail = await prisma.user.findUnique({ where: { email: String(email) } });
-    if (existingEmail) { res.status(400).json({ message: 'Bu e-posta kullanımda' }); return; }
+    const normalizedEmail = String(email).trim().toLowerCase();
 
-    const existingNick = await (prisma as any).user.findFirst({ where: { nickname: { equals: String(nickname).trim(), mode: 'insensitive' } }});
-    if (existingNick) { res.status(400).json({ message: 'Bu kullanıcı adı (nickname) zaten alınmış' }); return; }
+    const existingEmail = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+    if (existingEmail) {
+      res.status(400).json({ message: 'Bu e-posta kullanımda' });
+      return;
+    }
 
     const validCode = await (prisma as any).verificationCode.findFirst({
-      where: { email: String(email), code: String(verificationCode), expiresAt: { gt: new Date() } }
+      where: { email: normalizedEmail, code: String(verificationCode), expiresAt: { gt: new Date() } }
     });
-    if (!validCode) { res.status(400).json({ message: 'Geçersiz veya süresi dolmuş kod' }); return; }
+    if (!validCode) {
+      res.status(400).json({ message: 'Gecersiz veya suresi dolmus kod' });
+      return;
+    }
 
-    let refUserId = null;
+    let finalNickname: string;
+    if (providedNick) {
+      const nickRegex = /^[a-zA-Z0-9_]{3,20}$/;
+      const trimmed = String(providedNick).trim();
+      if (!nickRegex.test(trimmed)) {
+        res.status(400).json({ message: 'Kullanici adi sadece harf, rakam ve alt cizgi (_) icerebilir ve en az 3 karakter olmalidir.' });
+        return;
+      }
+      const existingNick = await (prisma as any).user.findFirst({
+        where: { nickname: { equals: trimmed, mode: 'insensitive' } }
+      });
+      if (existingNick) {
+        res.status(400).json({ message: 'Bu kullanici adi (nickname) zaten alinmis' });
+        return;
+      }
+      finalNickname = trimmed;
+    } else {
+      finalNickname = await findUniqueNickname(normalizedEmail, String(firstName));
+    }
+
+    let refUserId: string | null = null;
     let initialBalance = 0.00;
 
     if (referralCode) {
       const refUser = await prisma.user.findUnique({ where: { referralCode: String(referralCode) } });
       if (refUser) {
-         refUserId = refUser.id;
-         initialBalance = 10.00; 
-         await prisma.user.update({ where: { id: refUser.id }, data: { balance: { increment: 5.00 } } });
+        refUserId = refUser.id;
+        initialBalance = 10.00;
+        await prisma.user.update({
+          where: { id: refUser.id },
+          data: { balance: { increment: 5.00 } }
+        });
       }
     }
 
@@ -69,9 +115,9 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       data: {
         firstName: String(firstName).trim(),
         lastName: String(lastName).trim(),
-        nickname: String(nickname).trim(),
-        phoneNumber: `+MAIL${Date.now()}`,
-        email: String(email).trim(),
+        nickname: finalNickname,
+        phoneNumber: '+MAIL' + Date.now(),
+        email: normalizedEmail,
         isEmailVerified: true,
         passwordHash,
         balance: initialBalance,
@@ -92,38 +138,47 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         lastName: newUser.lastName,
         phoneNumber: newUser.phoneNumber,
         nickname: newUser.nickname,
+        email: newUser.email,
         balance: newUser.balance,
       },
     });
   } catch (error: any) {
-    console.error('LOGIN/REGISTER HATA:', error);
-    res.status(500).json({ message: 'Server error', error: error.message || error });
+    console.error('REGISTER HATA:', error);
+    res.status(500).json({ message: 'Server error', error: error.message || String(error) });
   }
 };
 
 export const login = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { nickname, password, fcmToken } = req.body;
+    const { email, nickname, password, fcmToken } = req.body;
 
-    if (!nickname || !password) { res.status(400).json({ message: 'Kullanıcı adı ve şifre zorunludur' }); return; }
+    if ((!email && !nickname) || !password) {
+      res.status(400).json({ message: 'E-posta (veya kullanici adi) ve sifre zorunludur' });
+      return;
+    }
 
-    let user = await (prisma as any).user.findFirst({ 
-      where: { nickname: { equals: String(nickname).trim(), mode: 'insensitive' } } 
-    });
+    let user: any;
+    if (email) {
+      user = await prisma.user.findUnique({ where: { email: String(email).trim().toLowerCase() } });
+    } else {
+      user = await (prisma as any).user.findFirst({
+        where: { nickname: { equals: String(nickname).trim(), mode: 'insensitive' } }
+      });
+    }
 
     if (!user) {
-      res.status(400).json({ message: 'Geçersiz kullanıcı adı veya şifre' });
+      res.status(400).json({ message: 'Gecersiz e-posta/kullanici adi veya sifre' });
       return;
     }
 
     if ((user.role as string) === 'BANNED') {
-      res.status(403).json({ message: 'Hesabınız askıya alınmıştır. Lütfen destek ile iletişime geçin.' });
+      res.status(403).json({ message: 'Hesabiniz askiya alinmistir. Lutfen destek ile iletisime gecin.' });
       return;
     }
 
     const isMatch = await bcrypt.compare(String(password), user.passwordHash);
     if (!isMatch) {
-      res.status(400).json({ message: 'Geçersiz kullanıcı adı veya şifre' });
+      res.status(400).json({ message: 'Gecersiz e-posta/kullanici adi veya sifre' });
       return;
     }
 
@@ -145,34 +200,37 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         lastName: user.lastName,
         phoneNumber: user.phoneNumber,
         nickname: user.nickname,
+        email: user.email,
         role: user.role,
         balance: user.balance,
       },
     });
   } catch (error: any) {
-    console.error('LOGIN/REGISTER HATA:', error);
-    res.status(500).json({ message: 'Server error', error: error.message || error });
+    console.error('LOGIN HATA:', error);
+    res.status(500).json({ message: 'Server error', error: error.message || String(error) });
   }
 };
 
 export const telegramAuth = async (req: Request, res: Response): Promise<void> => {
   try {
     const { tgId, firstName, lastName, username } = req.body;
-    if (!tgId) { res.status(400).json({ message: 'Telegram ID zorunludur' }); return; }
+    if (!tgId) {
+      res.status(400).json({ message: 'Telegram ID zorunludur' });
+      return;
+    }
 
-    let user = await (prisma as any).user.findFirst({ where: { telegramId: String(tgId) } });
+    let user: any = await (prisma as any).user.findFirst({ where: { telegramId: String(tgId) } });
 
-    // Kullanici yoksa Telegram bilgileriyle arka planda otomatik kayit edelim
     if (!user) {
       const salt = await bcrypt.genSalt(10);
       const passwordHash = await bcrypt.hash(String(tgId) + 'tg_secret', salt);
-      const mockPhone = `+TG${tgId}`; // Telegram'dan girenlerin gecici numarasi
+      const mockPhone = '+TG' + tgId;
 
       user = await (prisma as any).user.create({
         data: {
           firstName: String(firstName || 'Telegram'),
           lastName: lastName ? String(lastName) : '',
-          nickname: username ? String(username) : null,
+          nickname: username ? String(username) : await findUniqueNickname('tg' + tgId, 'tg'),
           phoneNumber: mockPhone,
           telegramId: String(tgId),
           passwordHash,
@@ -180,9 +238,13 @@ export const telegramAuth = async (req: Request, res: Response): Promise<void> =
       });
     }
 
-    if (!user) { res.status(500).json({ message: 'Kullanıcı oluşturulamadı.' }); return; }
+    if (!user) {
+      res.status(500).json({ message: 'Kullanici olusturulamadi.' });
+      return;
+    }
     if ((user.role as string) === 'BANNED') {
-      res.status(403).json({ message: 'Hesabınız askıya alınmıştır.' }); return;
+      res.status(403).json({ message: 'Hesabiniz askiya alinmistir.' });
+      return;
     }
 
     const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
@@ -202,96 +264,110 @@ export const telegramAuth = async (req: Request, res: Response): Promise<void> =
     });
   } catch (error: any) {
     console.error('TELEGRAM AUTH ERROR:', error);
-    res.status(500).json({ message: 'Server error', error: error.message || error });
+    res.status(500).json({ message: 'Server error', error: error.message || String(error) });
   }
 };
 
 export const sendVerificationEmail = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email } = req.body;
-    if (!email) { res.status(400).json({ message: 'E-posta zorunludur' }); return; }
-
-    const existingUser = await prisma.user.findUnique({ where: { email: String(email) } });
-    if (existingUser) {
-      res.status(400).json({ message: 'Bu e-posta zaten kayıtlı.' }); return;
+    if (!email) {
+      res.status(400).json({ message: 'E-posta zorunludur' });
+      return;
     }
 
-    const code = Math.floor(1000 + Math.random() * 9000).toString(); // 4 haneli kod
-    const expiresAt = new Date(Date.now() + 10 * 60000); // 10 dakika geçerli
+    const normalizedEmail = String(email).trim().toLowerCase();
+
+    const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+    if (existingUser) {
+      res.status(400).json({ message: 'Bu e-posta zaten kayitli.' });
+      return;
+    }
+
+    const code = Math.floor(1000 + Math.random() * 9000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60000);
 
     await (prisma as any).verificationCode.create({
-      data: { email: String(email), code, expiresAt }
+      data: { email: normalizedEmail, code, expiresAt }
     });
 
-    // Gerçek E-Posta Gönderimi (NodeMailer & Gmail)
-    const transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 465,
-      secure: true,
-      auth: { 
-        user: process.env.EMAIL_USER, 
-        pass: process.env.EMAIL_PASS 
-      }
-    });
+    const RESEND_API_KEY = process.env.RESEND_API_KEY;
+    const EMAIL_FROM = process.env.EMAIL_FROM || 'Hossarpay <noreply@hossarpay.com>';
 
-    const mailOptions = {
-      from: '"Hossarpay Support" <' + process.env.EMAIL_USER + '>',
-      to: email,
-      subject: 'Hossarpay - Doğrulama Kodunuz',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
-          <h2 style="color: #0066FF; text-align: center;">Hossarpay'e Hoş Geldiniz!</h2>
-          <p style="font-size: 16px; color: #333;">Hesabınızı doğrulamak için aşağıdaki 4 haneli güvenlik kodunu kullanın:</p>
-          <div style="text-align: center; margin: 30px 0;">
-            <span style="font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #0066FF; padding: 15px 30px; background-color: #f0f7ff; border-radius: 8px;">${code}</span>
-          </div>
-          <p style="font-size: 14px; color: #666;">Bu kod 10 dakika boyunca geçerlidir. Lütfen bu kodu kimseyle paylaşmayın.</p>
-          <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-          <p style="font-size: 12px; color: #999; text-align: center;">© 2026 Hossarpay. Tüm Hakları Saklıdır.</p>
-        </div>
-      `
-    };
-
-    await new Promise((resolve, reject) => {
-      transporter.sendMail(mailOptions, (err, info) => {
-        if (err) {
-          console.error("Nodemailer Hatası:", err);
-          reject(err);
-        } else {
-          console.log(`[EMAIL BAŞARIYLA GÖNDERİLDİ] Alıcı: ${email}`);
-          resolve(info);
-        }
+    if (!RESEND_API_KEY) {
+      console.log('[DEV MODE] Dogrulama kodu: ' + code + ' (e-posta: ' + normalizedEmail + ')');
+      res.status(200).json({
+        message: 'Dogrulama kodu gonderildi (DEV MODE).',
+        devCode: code
       });
+      return;
+    }
+
+    const html = '<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">' +
+      '<h2 style="color: #8B5CF6; text-align: center;">Hossarpay\'e Hos Geldiniz!</h2>' +
+      '<p style="font-size: 16px; color: #333;">Hesabinizi dogrulamak icin asagidaki 4 haneli guvenlik kodunu kullanin:</p>' +
+      '<div style="text-align: center; margin: 30px 0;">' +
+      '<span style="font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #8B5CF6; padding: 15px 30px; background-color: #f0f7ff; border-radius: 8px;">' + code + '</span>' +
+      '</div>' +
+      '<p style="font-size: 14px; color: #666;">Bu kod 10 dakika boyunca gecerlidir. Lutfen bu kodu kimseyle paylasmayin.</p>' +
+      '<hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">' +
+      '<p style="font-size: 12px; color: #999; text-align: center;">&copy; 2026 Hossarpay. Tum Haklari Saklidir.</p>' +
+      '</div>';
+
+    const resendResp = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + RESEND_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: EMAIL_FROM,
+        to: [normalizedEmail],
+        subject: 'Hossarpay - Dogrulama Kodunuz',
+        html: html
+      })
     });
 
-    res.status(200).json({ message: 'Doğrulama kodu gönderildi.' });
+    if (!resendResp.ok) {
+      const errText = await resendResp.text();
+      console.error('Resend hatasi:', errText);
+      res.status(500).json({ message: 'E-posta gonderilemedi', error: errText });
+      return;
+    }
+
+    console.log('[EMAIL BASARIYLA GONDERILDI] Alici: ' + normalizedEmail);
+    res.status(200).json({ message: 'Dogrulama kodu gonderildi.' });
   } catch (error: any) {
     console.error('EMAIL SEND ERROR:', error);
-    res.status(500).json({ message: 'E-posta gönderilemedi', error: error.message || error });
+    res.status(500).json({ message: 'E-posta gonderilemedi', error: error.message || String(error) });
   }
 };
 
 export const googleAuth = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, firstName, lastName, photoUrl, googleId } = req.body;
-    if (!email) { res.status(400).json({ message: 'E-Posta zorunludur' }); return; }
+    if (!email) {
+      res.status(400).json({ message: 'E-Posta zorunludur' });
+      return;
+    }
 
-    let user = await (prisma as any).user.findUnique({ where: { email: String(email) } });
+    const normalizedEmail = String(email).trim().toLowerCase();
 
-    // Kullanici yoksa Google bilgileriyle arka planda otomatik kayit edelim
+    let user: any = await (prisma as any).user.findUnique({ where: { email: normalizedEmail } });
+
     if (!user) {
       const salt = await bcrypt.genSalt(10);
-      const passwordHash = await bcrypt.hash(String(email) + 'google_secret', salt);
-      const mockPhone = `+GL${Date.now().toString().substring(0, 8)}`; // Gecici numara
+      const passwordHash = await bcrypt.hash(normalizedEmail + 'google_secret', salt);
+      const mockPhone = '+GL' + Date.now().toString().substring(0, 8);
       const newRefCode = generateReferralCode(String(firstName || 'Google'));
 
       user = await (prisma as any).user.create({
         data: {
           firstName: String(firstName || 'Google'),
           lastName: lastName ? String(lastName) : '',
-          nickname: String(email).split('@')[0].substring(0, 15),
+          nickname: await findUniqueNickname(normalizedEmail, String(firstName || 'Google')),
           phoneNumber: mockPhone,
-          email: String(email),
+          email: normalizedEmail,
           isEmailVerified: true,
           profileImage: photoUrl ? String(photoUrl) : null,
           passwordHash,
@@ -301,7 +377,8 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
     }
 
     if ((user.role as string) === 'BANNED') {
-      res.status(403).json({ message: 'Hesabınız askıya alınmıştır.' }); return;
+      res.status(403).json({ message: 'Hesabiniz askiya alinmistir.' });
+      return;
     }
 
     const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
@@ -323,7 +400,6 @@ export const googleAuth = async (req: Request, res: Response): Promise<void> => 
     });
   } catch (error: any) {
     console.error('GOOGLE AUTH ERROR:', error);
-    res.status(500).json({ message: 'Server error', error: error.message || error });
+    res.status(500).json({ message: 'Server error', error: error.message || String(error) });
   }
 };
-
