@@ -26,7 +26,7 @@ app.use('/api', apiRoutes);
 
 // Basic Route
 app.get('/api/health', (req: Request, res: Response) => {
-  res.status(200).json({ status: 'success', message: 'Hossarpay Backend is running on Vercel!' });
+  res.status(200).json({ status: 'success', message: 'Hossarpay Backend is running on VPS!' });
 });
 
 // YENİ: VERCEL UYUMU İÇİN GÜNCELLEME
