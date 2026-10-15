@@ -1,0 +1,100 @@
+﻿# Dependencies
+node_modules/
+.pnp
+.pnp.js
+.yarn/install-state.gz
+bower_components/
+
+# Build outputs
+dist/
+build/
+.vercel/
+.turbo/
+*.tsbuildinfo
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+.coverage/
+
+# Environment files (CRITICAL)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+!.env.example
+
+# Prisma cache
+.cache/
+.local/
+/generated/prisma
+prisma/migrations/dev.db*
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDE
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Test
+coverage/
+.nyc_output/
+
+# Gradle / Android
+.gradle/
+android/.gradle/
+android/captures/
+android/local.properties
+android/key.properties
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+
+# Backup files
+*.bak
+*.tmp
+
+# Hossarpay-specific
+hossarpay-backend/dist/
+hossarpay-backend/node_modules/
+hossarpay-backend/.env
+hossarpay-backend/prisma/migrations/dev*
+hossarpay_frontend/build/
+hossarpay_frontend/.dart_tool/
+hossarpay_frontend/.flutter-plugins
+hossarpay_frontend/.flutter-plugins-dependencies
+hossarpay_frontend/android/.gradle/
+hossarpay_frontend/android/local.properties
+hossarpay_frontend/ios/Pods/
+hossarpay_frontend/ios/Flutter/Flutter.framework
+hossarpay_frontend/pubspec.lock
+hossarpay_frontend/macos/Pods/
+hossarpay_frontend/windows/flutter/ephemeral/
+hossarpay_frontend/linux/flutter/ephemeral/
+hossarpay_frontend/.idea/
+hossarpay_frontend/.metadata
+hossarpay-backend/prisma_backup.json
+hossarpay-backend/yedek_al.js
+hossarpay-backend/geri_yukle.js
+# Firebase (CRITICAL - API keys!)
+**/google-services.json
+**/GoogleService-Info.plist
