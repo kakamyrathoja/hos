@@ -1,0 +1,13 @@
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.fvm/
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
