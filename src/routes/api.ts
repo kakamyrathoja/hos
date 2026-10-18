@@ -28,7 +28,7 @@ router.post('/auth/google', googleAuth);
 router.post('/upload/avatar', authenticate, uploadAvatar, uploadFile);
 router.post('/upload/media', authenticate, uploadMedia, uploadFile);
 router.delete('/upload/:key', authenticate, deleteFile);
-router.get('/upload/url/:key(*)', authenticate, refreshFileUrl);
+router.get('/upload/url/:key', authenticate, refreshFileUrl);
 
 router.get('/user/profile', authenticate, getProfile);
 router.put('/user/profile', authenticate, updateProfile);
