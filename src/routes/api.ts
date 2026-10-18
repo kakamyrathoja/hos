@@ -14,6 +14,8 @@ import {
   createStory, getActiveStories, deleteStory, viewStory, reactToStory 
 } from '../controllers/storyController';
 import { authenticate, authorizeAdmin } from '../middlewares/authMiddleware';
+import { uploadAvatar, uploadMedia } from '../middlewares/upload';
+import { uploadFile, deleteFile, refreshFileUrl } from '../controllers/uploadController';
 
 const router = Router();
 
@@ -22,6 +24,11 @@ router.post('/auth/login', login);
 router.post('/auth/telegram', telegramAuth);
 router.post('/auth/email-code', sendVerificationEmail);
 router.post('/auth/google', googleAuth);
+
+router.post('/upload/avatar', authenticate, uploadAvatar, uploadFile);
+router.post('/upload/media', authenticate, uploadMedia, uploadFile);
+router.delete('/upload/:key', authenticate, deleteFile);
+router.get('/upload/url/:key(*)', authenticate, refreshFileUrl);
 
 router.get('/user/profile', authenticate, getProfile);
 router.put('/user/profile', authenticate, updateProfile);
