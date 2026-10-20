@@ -313,6 +313,117 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
       ),
     );
   }
+    // YENİ: ŞİKAYETLER EKRANI
+  String _reasonLabel(String reason) {
+    switch (reason) {
+      case 'SPAM': return 'report_spam'.tr() ?? 'Spam / Reklam';
+      case 'ABUSE': return 'report_abuse'.tr() ?? 'Uygunsuz İçerik';
+      case 'HARASSMENT': return 'report_harassment'.tr() ?? 'Taciz / Tehdit';
+      default: return 'report_other'.tr() ?? 'Diğer';
+    }
+  }
+
+  Widget _buildReports(List<dynamic> reports) {
+    if (reports.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.done_all, size: 64, color: Colors.grey.shade300),
+            const SizedBox(height: 16),
+            Text('reports_empty'.tr() ?? 'Bekleyen şikayet yok.', style: TextStyle(color: Colors.grey.shade500, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      );
+    }
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? Colors.white : Colors.black87;
+
+    return RefreshIndicator(
+      onRefresh: () => ref.read(adminProvider.notifier).fetchAllData(),
+      child: ListView.builder(
+        padding: const EdgeInsets.all(20),
+        itemCount: reports.length,
+        itemBuilder: (context, index) {
+          final r = reports[index];
+          final target = r['target'];
+          final reporterName = r['reporter'] != null
+              ? (r['reporter']['nickname'] ?? r['reporter']['firstName'] ?? '?')
+              : '?';
+
+          String preview = '—';
+          String targetOwner = '?';
+          if (r['targetType'] == 'MESSAGE') {
+            preview = target != null ? (target['content'] ?? '📷 Fotoğraf / Medya') : 'Silinmiş mesaj';
+            targetOwner = target != null ? (target['sender']?['nickname'] ?? target['sender']?['firstName'] ?? '?') : '?';
+          } else if (r['targetType'] == 'STORY') {
+            preview = target != null ? '📷 Hikaye' : 'Silinmiş hikaye';
+            targetOwner = target != null ? (target['user']?['nickname'] ?? target['user']?['firstName'] ?? '?') : '?';
+          } else {
+            preview = '👤 Kullanıcı hesabı';
+            targetOwner = target != null ? (target['nickname'] ?? target['firstName'] ?? '?') : '?';
+          }
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.red.withOpacity(0.3), width: 2),
+              boxShadow: [BoxShadow(color: Colors.red.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(color: Colors.red.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
+                        child: Text(_reasonLabel(r['reason']), style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+                      ),
+                      Text(r['targetType'], style: TextStyle(color: Colors.grey.shade500, fontSize: 11, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text('Şikayetçi: $reporterName  •  Hedef: $targetOwner', style: TextStyle(color: textColor, fontSize: 13, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  Text(preview, maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(color: textColor.withOpacity(0.8), fontSize: 13)),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+                          onPressed: () {
+                            ref.read(adminProvider.notifier).resolveReport(r['id'], 'REMOVED');
+                          },
+                          child: Text('reports_remove'.tr() ?? 'İçeriği Kaldır', style: const TextStyle(color: Colors.white, fontSize: 12)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            ref.read(adminProvider.notifier).resolveReport(r['id'], 'KEPT');
+                          },
+                          child: Text('reports_keep'.tr() ?? 'Reddet', style: const TextStyle(fontSize: 12)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
 
   Widget _buildLogs(Map<String, dynamic> logs) {
     final transactions = logs['transactions'] as List<dynamic>? ?? [];
@@ -475,6 +586,7 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
         case 0: content = _buildUsersList(adminState.users); break;
         case 1: content = _buildPendingPurchases(adminState.pendingPurchases); break;
         case 2: content = _buildLogs(adminState.logs); break;
+        case 3: content = _buildReports(adminState.reports); break;
         default: content = const SizedBox();
       }
     }
@@ -502,6 +614,7 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
               NavigationRailDestination(icon: Icon(Icons.people_alt_outlined), selectedIcon: Icon(Icons.people), label: Text('Users')),
               NavigationRailDestination(icon: Icon(Icons.pending_actions_outlined), selectedIcon: Icon(Icons.pending_actions), label: Text('Pending')),
               NavigationRailDestination(icon: Icon(Icons.history_outlined), selectedIcon: Icon(Icons.history), label: Text('Logs')),
+              NavigationRailDestination(icon: Icon(Icons.flag_outlined), selectedIcon: Icon(Icons.flag), label: Text('Reports')),
             ],
           ),
           const VerticalDivider(thickness: 1, width: 1),

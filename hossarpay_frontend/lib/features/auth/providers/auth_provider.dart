@@ -1,9 +1,15 @@
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/network/token_storage.dart';
+
+// Google Cloud Console'dan aldığın OAuth 2.0 Web Client ID'yi buraya yapıştır.
+// Örn: '1234567890-abc...apps.googleusercontent.com'
+const String GOOGLE_CLIENT_ID = '388116351159-9fubrbqle4do3jlsvpqhgfufv0bgrmbi.apps.googleusercontent.com'; // ← BURAYI DOLDUR
 
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   return AuthNotifier();
@@ -46,10 +52,24 @@ class AuthNotifier extends StateNotifier<AuthState> {
     _loadUser();
   }
 
+  Future<void> _persistSession(String token, dynamic user) async {
+    await TokenStorage.saveToken(token);
+    await TokenStorage.saveUser(jsonEncode(user));
+  }
+
+  // FCM push token'ı alır (mobilde). Web'de FCM yok → null döner, sorun değil.
+  Future<String?> _getFcmToken() async {
+    if (kIsWeb) return null;
+    try {
+      return await FirebaseMessaging.instance.getToken();
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _loadUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
-    final userStr = prefs.getString('user');
+    final token = await TokenStorage.readToken();
+    final userStr = await TokenStorage.readUserJson();
 
     if (token != null && userStr != null) {
       state = state.copyWith(isAuthenticated: true, token: token, user: jsonDecode(userStr));
@@ -70,9 +90,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final token = response.data['token'];
       final user = response.data['user'];
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('token', token);
-      await prefs.setString('user', jsonEncode(user));
+      await _persistSession(token, user);
 
       state = state.copyWith(isLoading: false, isAuthenticated: true, user: user, token: token);
     } catch (e) {
@@ -84,23 +102,24 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  Future<void> login(String nickname, String password) async {
+  Future<void> login(String email, String password) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
+      final fcmToken = await _getFcmToken();
       final dio = await ApiClient.client;
       final response = await dio.post('/auth/login', data: {
-        'nickname': nickname,
+        'email': email,
         'password': password,
+        'fcmToken': fcmToken,
       });
 
       final token = response.data['token'];
       final user = response.data['user'];
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('token', token);
-      await prefs.setString('user', jsonEncode(user));
+      await _persistSession(token, user);
 
       state = state.copyWith(isLoading: false, isAuthenticated: true, user: user, token: token);
+      await fetchProfile(); // Profil bilgilerini (e-posta dahil) tazele
     } catch (e) {
       String errMsg = 'Giriş başarısız';
       if (e is DioException && e.response?.data != null) {
@@ -110,29 +129,30 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  Future<void> registerAdvanced(String firstName, String lastName, String nickname, String password, String email, String referralCode, String verificationCode) async {
+  Future<void> registerAdvanced(String firstName, String lastName, String? nickname, String password, String email, String referralCode, String verificationCode) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
+      final fcmToken = await _getFcmToken();
       final dio = await ApiClient.client;
-      
+
       final response = await dio.post('/auth/register', data: {
         'firstName': firstName,
         'lastName': lastName,
-        'nickname': nickname,
+        'nickname': (nickname != null && nickname.isNotEmpty) ? nickname : null,
         'email': email.isNotEmpty ? email : null,
         'password': password,
         'verificationCode': verificationCode,
-        'referralCode': referralCode.isNotEmpty ? referralCode : null
+        'referralCode': referralCode.isNotEmpty ? referralCode : null,
+        'fcmToken': fcmToken
       });
 
       final token = response.data['token'];
       final user = response.data['user'];
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('token', token);
-      await prefs.setString('user', jsonEncode(user));
+      await _persistSession(token, user);
 
       state = state.copyWith(isLoading: false, isAuthenticated: true, user: user, token: token);
+      await fetchProfile(); // Kayıt sonrası e-posta profil alanını otomatik doldur
     } catch (e) {
       String errMsg = 'Kayıt başarısız';
       if (e is DioException && e.response?.data != null) {
@@ -142,11 +162,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  
+
   Future<void> googleLogin() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final GoogleSignIn googleSignIn = GoogleSignIn(clientId: 'BURAYA_GOOGLE_CLIENT_ID_GELECEK.apps.googleusercontent.com');
+      if (GOOGLE_CLIENT_ID.isEmpty) {
+        state = state.copyWith(isLoading: false, error: 'Google girişi yapılandırılmamış. GOOGLE_CLIENT_ID boş.');
+        return;
+      }
+      final GoogleSignIn googleSignIn = GoogleSignIn(clientId: GOOGLE_CLIENT_ID);
       final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
 
       if (googleUser == null) {
@@ -166,9 +190,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final token = response.data['token'];
       final user = response.data['user'];
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('token', token);
-      await prefs.setString('user', jsonEncode(user));
+      await _persistSession(token, user);
 
       state = state.copyWith(isLoading: false, isAuthenticated: true, user: user, token: token);
     } catch (e) {
@@ -185,13 +207,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final dio = await ApiClient.client;
       final response = await dio.get('/user/profile');
       final user = response.data;
-      
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('user', jsonEncode(user));
-      
+
+      await TokenStorage.saveUser(jsonEncode(user));
+
       state = state.copyWith(user: user);
     } catch (e) {
-      // Token expired vs. log out is handled elsewhere if needed
+      // Token geçersizse sessizce çıkış yap (401): karışık state kalmasın
+      if (e is DioException && e.response?.statusCode == 401) {
+        await logout();
+      }
     }
   }
 
@@ -205,9 +229,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('token');
-    await prefs.remove('user');
+    await TokenStorage.clear();
     state = AuthState(); // Reset
   }
 }

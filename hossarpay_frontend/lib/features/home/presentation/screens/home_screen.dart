@@ -3,16 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:go_router/go_router.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:image_picker/image_picker.dart';
+import '../../../../core/utils/image_utils.dart';
 import 'dart:convert';
 import 'package:firebase_messaging/firebase_messaging.dart'; 
 import 'package:flutter/foundation.dart' show kIsWeb;
-
 import '../../../auth/providers/auth_provider.dart';
 import '../../providers/home_data_provider.dart';
 import '../../providers/balance_provider.dart'; 
 import '../../../chat/providers/contact_provider.dart'; 
 import '../../../../core/network/api_client.dart';
+import '../../../../core/utils/report_block_utils.dart';
 
 Widget _buildDynamicAvatar(String name, String? base64Image, {double radius = 24}) {
   if (base64Image != null && base64Image.isNotEmpty) {
@@ -74,22 +74,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _addStory() async {
-    final picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 30, maxWidth: 800);
-    
-    if (image != null) {
-      setState(() => _isUploadingStory = true);
-      final bytes = await image.readAsBytes();
-      final base64Image = "data:image/jpeg;base64,${base64Encode(bytes)}";
-      
-      try {
-        await ref.read(homeDataProvider.notifier).createStory(base64Image);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('story_shared'.tr() ?? 'Hikayeniz başarıyla paylaşıldı!'), backgroundColor: Colors.green));
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('Exception:', '')), backgroundColor: Colors.red));
-      } finally {
-        setState(() => _isUploadingStory = false);
-      }
+    // Ortak yardımcı: sıkıştırır + ~1,5 MB sınırını denetler (ImageUtils).
+    late final String? base64Image;
+    try {
+      base64Image = await ImageUtils.pickAsBase64(maxWidth: 800, imageQuality: 30);
+    } on ImageTooLargeException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.orange));
+      return;
+    }
+    if (base64Image == null) return; // kullanıcı vazgeçti
+
+    if (!mounted) return;
+    setState(() => _isUploadingStory = true);
+    try {
+      await ref.read(homeDataProvider.notifier).createStory(base64Image);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('story_shared'.tr() ?? 'Hikayeniz başarıyla paylaşıldı!'), backgroundColor: Colors.green));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('Exception:', '')), backgroundColor: Colors.red));
+    } finally {
+      if (mounted) setState(() => _isUploadingStory = false);
     }
   }
 
@@ -129,6 +136,54 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onPressed: () => Navigator.pop(ctx),
               )
             ),
+
+                        // YENİ: Başkasının hikayesini şikayet et / kullanıcıyı engelle
+            if (!isMyStory)
+              Positioned(
+                top: 40,
+                left: 20,
+                child: IconButton(
+                  icon: const Icon(Icons.flag_outlined, color: Colors.white70, size: 28),
+                  onPressed: () async {
+                    final storyUserId = userStoryObj['user']['id'].toString();
+                    final action = await showModalBottomSheet<String>(
+                      context: context,
+                      shape: const RoundedRectangleBorder(
+                        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                      ),
+                      builder: (sheetCtx) => SafeArea(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(height: 12),
+                            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade400, borderRadius: BorderRadius.circular(4))),
+                            const SizedBox(height: 16),
+                            ListTile(
+                              leading: const Icon(Icons.report_gmailerrorred, color: Colors.orangeAccent),
+                              title: Text('report'.tr() ?? 'Şikayet Et'),
+                              onTap: () => Navigator.pop(sheetCtx, 'REPORT'),
+                            ),
+                            ListTile(
+                              leading: const Icon(Icons.block, color: Colors.redAccent),
+                              title: Text('block_user'.tr() ?? 'Kullanıcıyı Engelle'),
+                              onTap: () => Navigator.pop(sheetCtx, 'BLOCK'),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                        ),
+                      ),
+                    );
+                    if (action == 'REPORT') {
+                      await showReportDialog(context, targetType: 'STORY', targetId: latestStoryId.toString());
+                    } else if (action == 'BLOCK') {
+                      await blockUser(context, storyUserId);
+                      Navigator.pop(ctx);
+                      ref.read(homeDataProvider.notifier).fetchHomeData();
+                    }
+                  },
+                ),
+              ),
+              
             if (isMyStory) ...[
               Positioned(
                 bottom: 40,
@@ -326,6 +381,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return sUserId == user['id'] || activeChatUserIds.contains(sUserId);
     }).toList();
     
+    // Discover: yalnızca sohbet edilmeyen ve kendi paylaşımları olmayan kullanıcıların hikayeleri
+    final discoverStories = allStories.where((s) {
+    final sUserId = s['user']['id'];
+      return sUserId != user['id'] && !activeChatUserIds.contains(sUserId);
+    }).toList();
+
     // Güvenlik: Telefon numarasının son 4 hanesini alma
     String maskedPhone = '****';
     if (user['phoneNumber'] != null && user['phoneNumber'].length >= 4) {
@@ -551,7 +612,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       const SizedBox(width: 24),
                       _buildActionBtn(context, 'history'.tr() ?? 'Geçmiş', Icons.history, const Color(0xFFF59E0B), () => context.push('/history')),
                       const SizedBox(width: 24),
-                      _buildActionBtn(context, 'discover'.tr() ?? 'Keşfet', Icons.explore, const Color(0xFF10B981), () => _showAllStories(allStories)),
+                      _buildActionBtn(context, 'discover'.tr() ?? 'Keşfet', Icons.explore, const Color(0xFF10B981), () => _buildActionBtn(context, 'discover'.tr() ?? 'Keşfet', Icons.explore, const Color(0xFF10B981), () => _showAllStories(discoverStories))),
                       const SizedBox(width: 24),
                       _buildActionBtn(context, 'new_chat'.tr() ?? 'Sohbet', Icons.chat_bubble, Colors.purple, () => context.push('/new_chat')),
                     ],
@@ -599,7 +660,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       final chat = conversations[index];
                       final isGroup = chat['isGroup'] ?? false;
                       final isCreator = chat['isCreator'] ?? false; 
-                      final chatName = chat['name'] ?? 'Bilinmeyen';
+                      final chatName = chat['name'] ?? 'unknown'.tr() ?? 'Bilinmeyen';
                       final unreadCount = chat['unreadCount'] ?? 0;
                       
                       return Container(
@@ -642,7 +703,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               children: [
                                 Expanded(
                                   child: Text(
-                                    chat['lastMessage'] ?? (isGroup ? 'Grup Sohbeti' : 'Özel Sohbet'), 
+                                    chat['lastMessage'] ?? (isGroup ? 'group_chat'.tr() ?? 'Grup Sohbeti' : 'private_chat'.tr() ?? 'Özel Sohbet'), 
                                     maxLines: 1, 
                                     overflow: TextOverflow.ellipsis, 
                                     style: TextStyle(color: unreadCount > 0 ? Theme.of(context).textTheme.bodyMedium?.color : Colors.grey.shade500, fontSize: 13, fontWeight: FontWeight.w500)

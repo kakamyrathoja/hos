@@ -26,11 +26,9 @@ dependencies:
   google_sign_in: ^6.2.1
   lottie: ^3.1.0
   record: ^6.0.0
-  audioplayers: any
+  audioplayers: any    
 
-dev_dependencies:
-  font_awesome_flutter: ^10.7.0
-  flutter_test:
+dev_dependencies: 
     sdk: flutter
   flutter_lints: ^2.0.0
   flutter_launcher_icons: ^0.14.4

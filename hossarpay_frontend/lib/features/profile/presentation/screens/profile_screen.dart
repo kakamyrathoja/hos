@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
+import '../../../../core/utils/image_utils.dart';
 import 'dart:convert';
 import '../../../auth/providers/auth_provider.dart';
 import '../../../../core/theme/theme_provider.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/utils/phone_countries.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -16,86 +17,171 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+  bool _isUploadingAvatar = false;
 
   Future<void> _pickAndUploadImage(BuildContext context) async {
-    final picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 50, maxWidth: 600);
-    
-    if (image != null) {
-      final bytes = await image.readAsBytes();
-      final base64Image = "data:image/jpeg;base64,${base64Encode(bytes)}";
-      
-      try {
-        final dio = await ApiClient.client;
-        await dio.put('/user/profile', data: {'profileImage': base64Image});
-        ref.read(authProvider.notifier).fetchProfile(); 
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profil resmi güncellendi!'), backgroundColor: Colors.green));
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Resim yüklenemedi. (Boyutu çok büyük olabilir)'), backgroundColor: Colors.red));
-      }
+    // Ortak yardımcı: sıkıştırır + ~1,5 MB sınırını denetler (ImageUtils).
+    late final String? base64Image;
+    try {
+      base64Image = await ImageUtils.pickAsBase64(maxWidth: 600, imageQuality: 50);
+    } on ImageTooLargeException catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.orange));
+      return;
+    }
+    if (base64Image == null) return; // kullanıcı vazgeçti
+
+    setState(() => _isUploadingAvatar = true);
+    try {
+      final dio = await ApiClient.client;
+      await dio.put('/user/profile', data: {'profileImage': base64Image});
+      ref.read(authProvider.notifier).fetchProfile();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('profile_image_updated'.tr() ?? 'Profil resmi güncellendi!'), backgroundColor: Colors.green));
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('profile_image_failed'.tr() ?? 'Resim yüklenemedi. İnternetinizi kontrol edin.'), backgroundColor: Colors.red));
+    } finally {
+      if (mounted) setState(() => _isUploadingAvatar = false);
     }
   }
 
   void _showEditNicknameDialog(BuildContext context, String currentNickname) {
     final nicknameCtrl = TextEditingController(text: currentNickname);
+    bool isProcessing = false;
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Takma Adı Değiştir'),
-        content: TextField(
-          controller: nicknameCtrl,
-          decoration: const InputDecoration(labelText: 'Yeni Takma Ad'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('İptal')),
-          ElevatedButton(
-            onPressed: () async {
-              try {
-                final dio = await ApiClient.client;
-                await dio.put('/user/profile', data: {'nickname': nicknameCtrl.text.trim()});
-                ref.read(authProvider.notifier).fetchProfile();
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Takma ad güncellendi!'), backgroundColor: Colors.green));
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bu takma ad kullanımda olabilir.'), backgroundColor: Colors.red));
-              }
-            },
-            child: const Text('Kaydet'),
-          )
-        ],
-      )
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setModalState) {
+        return AlertDialog(
+          title: Text('edit_nickname_title'.tr() ?? 'Takma Adı Değiştir'),
+          content: TextField(
+            controller: nicknameCtrl,
+            decoration: InputDecoration(labelText: 'new_nickname_label'.tr() ?? 'Yeni Takma Ad'),
+          ),
+          actions: [
+            TextButton(onPressed: isProcessing ? null : () => Navigator.pop(ctx), child: Text('cancel_btn'.tr() ?? 'İptal')),
+            ElevatedButton(
+              onPressed: isProcessing ? null : () async {
+                setModalState(() => isProcessing = true);
+                try {
+                  final dio = await ApiClient.client;
+                  await dio.put('/user/profile', data: {'nickname': nicknameCtrl.text.trim()});
+                  await ref.read(authProvider.notifier).fetchProfile();
+                  if (!ctx.mounted) return;
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('nickname_updated'.tr() ?? 'Takma ad güncellendi!'), backgroundColor: Colors.green));
+                } catch (e) {
+                  setModalState(() => isProcessing = false);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('nickname_taken'.tr() ?? 'Bu takma ad kullanımda olabilir.'), backgroundColor: Colors.red));
+                }
+              },
+              child: isProcessing
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : Text('save_btn'.tr() ?? 'Kaydet'),
+            )
+          ],
+        );
+      }),
     );
   }
 
   void _showEditEmailDialog(BuildContext context, String currentEmail) {
     final emailCtrl = TextEditingController(text: currentEmail);
+    bool isProcessing = false;
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('E-Poçta (Email) Goş'),
-        content: TextField(
-          controller: emailCtrl,
-          keyboardType: TextInputType.emailAddress,
-          decoration: const InputDecoration(labelText: 'E-mail'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('İptal')),
-          ElevatedButton(
-            onPressed: () async {
-              try {
-                final dio = await ApiClient.client;
-                await dio.put('/user/profile', data: {'email': emailCtrl.text.trim()});
-                ref.read(authProvider.notifier).fetchProfile();
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Email güncellendi!'), backgroundColor: Colors.green));
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bu email kullanımda veya hatalı.'), backgroundColor: Colors.red));
-              }
-            },
-            child: const Text('Kaydet'),
-          )
-        ],
-      )
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setModalState) {
+        return AlertDialog(
+          title: Text('edit_email_title'.tr() ?? 'E-Posta (Email) Değiştir'),
+          content: TextField(
+            controller: emailCtrl,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(labelText: 'E-mail'),
+          ),
+          actions: [
+            TextButton(onPressed: isProcessing ? null : () => Navigator.pop(ctx), child: Text('cancel_btn'.tr() ?? 'İptal')),
+            ElevatedButton(
+              onPressed: isProcessing ? null : () async {
+                setModalState(() => isProcessing = true);
+                try {
+                  final dio = await ApiClient.client;
+                  await dio.put('/user/profile', data: {'email': emailCtrl.text.trim()});
+                  await ref.read(authProvider.notifier).fetchProfile();
+                  if (!ctx.mounted) return;
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('email_updated'.tr() ?? 'Email güncellendi!'), backgroundColor: Colors.green));
+                } catch (e) {
+                  setModalState(() => isProcessing = false);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('email_taken'.tr() ?? 'Bu email kullanımda veya hatalı.'), backgroundColor: Colors.red));
+                }
+              },
+              child: isProcessing
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : Text('save_btn'.tr() ?? 'Kaydet'),
+            )
+          ],
+        );
+      }),
+    );
+  }
+
+  void _showEditPhoneDialog(BuildContext context, String currentPhone) {
+    final phoneCtrl = TextEditingController(text: currentPhone.startsWith('+MAIL') || currentPhone.startsWith('+TG') || currentPhone.startsWith('+GL') ? '' : currentPhone);
+    bool isProcessing = false;
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setModalState) {
+        return AlertDialog(
+          title: Text('edit_phone'.tr() ?? 'Telefon Numarası Değiştir'),
+          content: TextField(
+            controller: phoneCtrl,
+            keyboardType: TextInputType.phone,
+            onChanged: (_) => setModalState(() {}),
+            decoration: InputDecoration(
+              labelText: 'phone_hint'.tr() ?? 'Ülke koduyla (+90...)',
+              prefixIcon: Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: Center(
+                  widthFactor: 1,
+                  child: Text(
+                    detectFlagEmoji(phoneCtrl.text),
+                    style: const TextStyle(fontSize: 26),
+                  ),
+                ),
+              ),
+              prefixIconConstraints: const BoxConstraints(minWidth: 44),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: isProcessing ? null : () => Navigator.pop(ctx), child: Text('cancel_btn'.tr() ?? 'İptal')),
+            ElevatedButton(
+              onPressed: isProcessing ? null : () async {
+                final phone = phoneCtrl.text.trim().replaceAll(RegExp(r'[\s\-().]'), '');
+                if (!isValidInternationalPhone(phone)) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('invalid_phone'.tr() ?? 'Geçersiz numara'), backgroundColor: Colors.red));
+                  return;
+                }
+                setModalState(() => isProcessing = true);
+                try {
+                  final dio = await ApiClient.client;
+                  await dio.put('/user/profile', data: {'phoneNumber': phone});
+                  await ref.read(authProvider.notifier).fetchProfile();
+                  if (!ctx.mounted) return;
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('phone_saved'.tr() ?? 'Telefon numarası güncellendi!'), backgroundColor: Colors.green));
+                } catch (e) {
+                  setModalState(() => isProcessing = false);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('phone_taken'.tr() ?? 'Bu telefon numarası başkasına ait olabilir.'), backgroundColor: Colors.red));
+                }
+              },
+              child: isProcessing
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : Text('save_btn'.tr() ?? 'Kaydet'),
+            )
+          ],
+        );
+      }),
     );
   }
 
@@ -117,7 +203,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               TextField(
                 controller: phoneCtrl,
                 keyboardType: TextInputType.phone,
-                decoration: InputDecoration(labelText: 'real_phone'.tr() ?? 'Gerçek Telefon (+993...)', prefixIcon: const Icon(Icons.phone)),
+                onChanged: (_) => setModalState(() {}),
+                decoration: InputDecoration(
+                  labelText: 'phone_hint'.tr() ?? 'Ülke koduyla (+90...)',
+                  prefixIcon: Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: Center(
+                      widthFactor: 1,
+                      child: Text(
+                        detectFlagEmoji(phoneCtrl.text),
+                        style: const TextStyle(fontSize: 26),
+                      ),
+                    ),
+                  ),
+                  prefixIconConstraints: const BoxConstraints(minWidth: 44),
+                ),
               ),
               const SizedBox(height: 16),
               TextField(
@@ -132,7 +232,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
               onPressed: isProcessing ? null : () async {
-                final phone = phoneCtrl.text.trim();
+                final phone = phoneCtrl.text.trim().replaceAll(RegExp(r'[\s\-().]'), '');
                 final pass = passCtrl.text.trim();
 
                 if (phone.isEmpty || pass.length < 8) {
@@ -140,8 +240,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   return;
                 }
 
-                final phoneRegex = RegExp(r"^(?:\+375|\+993|\+90|\+7)\d{8,10}$");
-                if (!phoneRegex.hasMatch(phone.replaceAll(' ', ''))) {
+                if (!isValidInternationalPhone(phone)) {
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('invalid_phone'.tr() ?? 'Geçersiz numara'), backgroundColor: Colors.red));
                   return;
                 }
@@ -155,7 +254,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('account_secured'.tr() ?? 'Hesabınız başarıyla güvenceye alındı!'), backgroundColor: Colors.green));
                 } catch (e) {
                   setModalState(() => isProcessing = false);
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bu telefon numarası başkasına ait olabilir.'), backgroundColor: Colors.red));
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('phone_taken'.tr() ?? 'Bu telefon numarası başkasına ait olabilir.'), backgroundColor: Colors.red));
                 }
               },
               child: isProcessing ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : Text('confirm'.tr() ?? 'Onayla', style: const TextStyle(color: Colors.white)),
@@ -204,7 +303,48 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final themeMode = ref.watch(themeProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    if (user == null) return const Center(child: CircularProgressIndicator());
+    if (user == null) {
+      // Sonsuz dönen çember yerine: tekrar dene + çıkış seçenekleri
+      return Scaffold(
+        appBar: AppBar(
+          title: Text('profile'.tr(), style: const TextStyle(fontWeight: FontWeight.bold)),
+          elevation: 0,
+          backgroundColor: Colors.transparent,
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(width: 48, height: 48, child: CircularProgressIndicator(strokeWidth: 3)),
+                const SizedBox(height: 16),
+                Text('profile_load_failed'.tr() ?? 'Profil bilgileri yüklenemedi.', textAlign: TextAlign.center),
+                const SizedBox(height: 20),
+                Wrap(
+                  spacing: 12,
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: () => ref.read(authProvider.notifier).fetchProfile(),
+                      icon: const Icon(Icons.refresh),
+                      label: Text('retry_btn'.tr() ?? 'Tekrar Dene'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        ref.read(authProvider.notifier).logout();
+                        context.go('/login');
+                      },
+                      icon: const Icon(Icons.logout),
+                      label: Text('logout'.tr() ?? 'Çıkış Yap'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -243,7 +383,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     ),
                   ),
                   GestureDetector(
-                    onTap: () => _pickAndUploadImage(context),
+                    onTap: _isUploadingAvatar ? null : () => _pickAndUploadImage(context),
                     child: Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
@@ -252,7 +392,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         border: Border.all(color: Theme.of(context).scaffoldBackgroundColor, width: 3),
                         boxShadow: [BoxShadow(color: Theme.of(context).primaryColor.withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 4))]
                       ),
-                      child: const Icon(Icons.camera_alt, color: Colors.white, size: 18),
+                      child: _isUploadingAvatar
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.camera_alt, color: Colors.white, size: 18),
                     ),
                   )
                 ],
@@ -306,7 +452,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     onEdit: () => _showEditNicknameDialog(context, user['nickname'] ?? '')
                   ),
                   Divider(height: 1, color: Colors.grey.withOpacity(0.2), indent: 64),
-                  _buildInfoRow(context, Icons.phone_android, 'phone_number'.tr() ?? 'Telefon Numarası', user['phoneNumber'] ?? ''),
+                  _buildInfoRow(context, Icons.phone_android, 'phone_number'.tr() ?? 'Telefon Numarası', phoneWithFlag(user['phoneNumber'] ?? ''),
+                    onEdit: () => _showEditPhoneDialog(context, user['phoneNumber'] ?? '')
+                  ),
                   Divider(height: 1, color: Colors.grey.withOpacity(0.2), indent: 64),
                   _buildInfoRow(context, Icons.mail_outline, 'add_email'.tr() ?? 'E-mail goşmak...', user['email'] ?? 'add_email'.tr() ?? 'E-mail goşmak...', 
                     onEdit: () => _showEditEmailDialog(context, user['email'] ?? '')

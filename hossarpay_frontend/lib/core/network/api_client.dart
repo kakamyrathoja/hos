@@ -1,5 +1,5 @@
 import 'package:dio/dio.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'token_storage.dart';
 
 class ApiClient {
   static final Dio _dio = Dio(BaseOptions(
@@ -8,19 +8,32 @@ class ApiClient {
     receiveTimeout: const Duration(seconds: 10),
   ));
 
-  static Future<Dio> get client async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('jwt_token');
+  static bool _interceptorsReady = false;
 
-    _dio.interceptors.clear();
-    _dio.interceptors.add(InterceptorsWrapper(
-      onRequest: (options, handler) {
-        if (token != null) {
-          options.headers['Authorization'] = 'Bearer $token';
-        }
-        return handler.next(options);
-      },
-    ));
+  static void _ensureInterceptors() {
+    if (_interceptorsReady) return;
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          // Token her istekte taze okunur (login/logout sonrası sorun olmaz).
+          // Tek kaynak: TokenStorage.tokenKey ('token')
+          try {
+            final token = await TokenStorage.readToken();
+            if (token != null && token.isNotEmpty) {
+              options.headers['Authorization'] = 'Bearer $token';
+            }
+          } catch (_) {
+            // Token okunamazsa isteğe devam et, backend 401 döner.
+          }
+          return handler.next(options);
+        },
+      ),
+    );
+    _interceptorsReady = true;
+  }
+
+  static Future<Dio> get client async {
+    _ensureInterceptors();
     return _dio;
   }
 }

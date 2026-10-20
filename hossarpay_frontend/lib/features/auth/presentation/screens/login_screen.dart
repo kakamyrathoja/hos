@@ -7,7 +7,7 @@ import '../../providers/auth_provider.dart';
 class LoginScreen extends ConsumerWidget {
   LoginScreen({super.key});
 
-  final phoneCtrl = TextEditingController();
+  final emailCtrl = TextEditingController();
   final passCtrl = TextEditingController();
 
   @override
@@ -93,11 +93,11 @@ class LoginScreen extends ConsumerWidget {
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
                             child: TextField(
-                              controller: phoneCtrl,
-                              keyboardType: TextInputType.text,
+                              controller: emailCtrl,
+                              keyboardType: TextInputType.emailAddress,
                               decoration: InputDecoration(
-                                labelText: 'nickname'.tr() ?? 'Kullanıcı Adı (Nickname)',
-                                prefixIcon: Icon(Icons.alternate_email, color: Theme.of(context).primaryColor),
+                                labelText: 'email_label'.tr() ?? 'E-posta',
+                                prefixIcon: Icon(Icons.email_outlined, color: Theme.of(context).primaryColor),
                                 border: InputBorder.none,
                                 enabledBorder: InputBorder.none,
                                 focusedBorder: InputBorder.none,
@@ -135,7 +135,7 @@ class LoginScreen extends ConsumerWidget {
                           shadowColor: Theme.of(context).primaryColor.withOpacity(0.5)
                         ),
                         onPressed: authState.isLoading ? null : () {
-                          ref.read(authProvider.notifier).login(phoneCtrl.text.trim(), passCtrl.text.trim());
+                          ref.read(authProvider.notifier).login(emailCtrl.text.trim(), passCtrl.text.trim());
                         },
                         child: authState.isLoading 
                             ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white))

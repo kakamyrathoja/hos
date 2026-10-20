@@ -39,7 +39,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/translations/
-
+    - assets/lottie/
 flutter_launcher_icons:
   android: true
   ios: true

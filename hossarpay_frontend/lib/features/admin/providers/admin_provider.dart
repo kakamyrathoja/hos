@@ -7,6 +7,7 @@ class AdminState {
   final List<dynamic> users;
   final List<dynamic> pendingPurchases;
   final Map<String, dynamic> logs;
+  final List<dynamic> reports;
   final String? error;
 
   AdminState({
@@ -14,6 +15,7 @@ class AdminState {
     this.users = const [],
     this.pendingPurchases = const [],
     this.logs = const {'transactions': [], 'purchases': []},
+    this.reports = const [],
     this.error,
   });
 
@@ -22,6 +24,7 @@ class AdminState {
     List<dynamic>? users,
     List<dynamic>? pendingPurchases,
     Map<String, dynamic>? logs,
+    List<dynamic>? reports,
     String? error,
   }) {
     return AdminState(
@@ -29,6 +32,7 @@ class AdminState {
       users: users ?? this.users,
       pendingPurchases: pendingPurchases ?? this.pendingPurchases,
       logs: logs ?? this.logs,
+      reports: reports ?? this.reports,
       error: error, 
     );
   }
@@ -45,6 +49,7 @@ class AdminNotifier extends StateNotifier<AdminState> {
         dio.get('/admin/users'),
         dio.get('/admin/purchases/pending'),
         dio.get('/admin/logs'),
+        dio.get('/admin/reports'),
       ]);
 
       state = state.copyWith(
@@ -52,6 +57,7 @@ class AdminNotifier extends StateNotifier<AdminState> {
         users: results[0].data,
         pendingPurchases: results[1].data,
         logs: results[2].data,
+        reports: results[3].data,
         error: null,
       );
     } catch (e) {
@@ -99,6 +105,15 @@ class AdminNotifier extends StateNotifier<AdminState> {
         'action': action, 
       });
       await fetchAllData(); 
+    } catch (e) {}
+  }
+  
+  // YENİ: Şikayeti işle (REMOVED = kaldır, KEPT = reddet)
+  Future<void> resolveReport(String reportId, String action) async {
+    try {
+      final dio = await ApiClient.client;
+      await dio.put('/admin/reports/$reportId', data: {'action': action});
+      await fetchAllData();
     } catch (e) {}
   }
 }

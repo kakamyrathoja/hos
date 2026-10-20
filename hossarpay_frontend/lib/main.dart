@@ -137,7 +137,6 @@ class _HossarpayAppState extends ConsumerState<HossarpayApp> {
       supportedLocales: context.supportedLocales,
       locale: context.locale,
       localeResolutionCallback: (locale, supportedLocales) {
-        if (locale?.languageCode == 'tk') return const Locale('tr');
         return locale;
       },
       theme: AppTheme.lightTheme,

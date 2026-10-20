@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:image_picker/image_picker.dart';
+import '../../../../core/utils/image_utils.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'dart:async';
@@ -16,6 +16,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import '../../../auth/providers/auth_provider.dart';
+import '../../../../core/utils/report_block_utils.dart';
 
 MemoryImage? _getMemoryImage(String? base64Str) {
   if (base64Str == null || base64Str.isEmpty) return null;
@@ -93,14 +94,21 @@ class _ContactInfoScreenState extends State<ContactInfoScreen> {
   dynamic _userDetails;
   bool _isLoading = true;
   bool _isMuted = false;
+  bool _isBlocked = false;
 
   @override
   void initState() {
     super.initState();
     _fetchUserDetails();
     _loadMuteState();
+    _loadBlockState();
   }
   
+    Future<void> _loadBlockState() async {
+    final blockedIds = await fetchBlockedIds();
+    if (mounted) setState(() => _isBlocked = blockedIds.contains(widget.userId));
+  }
+
   Future<void> _loadMuteState() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() { _isMuted = prefs.getBool('mute_${widget.userId}') ?? false; });
@@ -220,8 +228,25 @@ class _ContactInfoScreenState extends State<ContactInfoScreen> {
                       _toggleMute,
                       color: _isMuted ? Colors.red : null
                     ),
+                    // YENİ: Engelle / Engeli Kaldır
+                    _buildTelegramActionButton(
+                      context,
+                      _isBlocked ? Icons.lock_open : Icons.block,
+                      _isBlocked ? ('unblock_user'.tr() ?? 'Engeli Kaldır') : ('block_user'.tr() ?? 'Engelle'),
+                      () async {
+                        if (_isBlocked) {
+                          await unblockUser(context, widget.userId);
+                          if (mounted) setState(() => _isBlocked = false);
+                        } else {
+                          await blockUser(context, widget.userId);
+                          if (mounted) setState(() => _isBlocked = true);
+                        }
+                      },
+                      color: _isBlocked ? Colors.green : Colors.red,
+                    ),
                   ],
                 ),
+                 
                 const SizedBox(height: 16),
                 
                 Container(
@@ -249,6 +274,16 @@ class _ContactInfoScreenState extends State<ContactInfoScreen> {
                     leading: const Icon(Icons.delete_sweep, color: Colors.redAccent),
                     title: Text('clear_history'.tr(), style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
                     onTap: _clearChatHistory, // Tıklandığında çalışır
+                  ),
+                ),
+                                // YENİ: Kullanıcıyı Şikayet Et
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(16)),
+                  child: ListTile(
+                    leading: const Icon(Icons.report_gmailerrorred, color: Colors.orangeAccent),
+                    title: Text('report'.tr() ?? 'Şikayet Et', style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold)),
+                    onTap: () => showReportDialog(context, targetType: 'USER', targetId: widget.userId),
                   ),
                 ),
                 const SizedBox(height: 40),
@@ -341,17 +376,22 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   }
 
   Future<void> _updateGroupImage() async {
-    final picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
-    if (image != null) {
-      final bytes = await image.readAsBytes();
-      final base64Image = "data:image/jpeg;base64,${base64Encode(bytes)}";
-      try {
-        final dio = await ApiClient.client;
-        await dio.put('/chat/group/${widget.groupId}', data: {'groupImage': base64Image});
-        _fetchGroupDetails();
-      } catch (e) {}
+    // Ortak yardımcı: sıkıştırır + ~1,5 MB sınırını denetler (ImageUtils).
+    late final String? base64Image;
+    try {
+      base64Image = await ImageUtils.pickAsBase64(maxWidth: 600, imageQuality: 40);
+    } on ImageTooLargeException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.orange));
+      return;
     }
+    if (base64Image == null) return; // kullanıcı vazgeçti
+    try {
+      final dio = await ApiClient.client;
+      await dio.put('/chat/group/${widget.groupId}', data: {'groupImage': base64Image});
+      _fetchGroupDetails();
+    } catch (e) {}
   }
 
   Future<void> _removeMember(String memberId) async {
@@ -591,6 +631,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   bool _showEmojiPicker = false;
   bool _hasText = false;
   Timer? _typingTimer;
+  bool _isBlocked = false; // YENİ: Bu kişi engellendi mi?
 
   // --- Audio Recording Vars ---
   final _audioRecorder = AudioRecorder();
@@ -608,7 +649,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   void initState() {
     super.initState();
     _fetchMessages();
-    
+    bool _isBlocked = false; // YENİ: Bu kişi engellendi mi?
+
     // Audio Player Listeners
     _audioPlayer.onDurationChanged.listen((d) { if (mounted) setState(() => _audioDuration = d); });
     _audioPlayer.onPositionChanged.listen((p) { if (mounted) setState(() => _audioPosition = p); });
@@ -647,6 +689,28 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     _focusNode.dispose();
     _msgCtrl.dispose();
     super.dispose();
+  }
+    // YENİ: Engelli mi kontrol et
+  Future<void> _loadBlockState() async {
+    final blockedIds = await fetchBlockedIds();
+    if (mounted && !widget.isGroup) {
+      setState(() => _isBlocked = blockedIds.contains(widget.id));
+    }
+  }
+
+  // YENİ: Engelle / Engeli kaldır (sadece DM'de _isBlocked durumunu güncelle)
+  Future<void> _toggleBlock(String targetUserId) async {
+    if (_isBlocked) {
+      await unblockUser(context, targetUserId);
+      if (mounted && !widget.isGroup) setState(() => _isBlocked = false);
+    } else {
+      await blockUser(context, targetUserId);
+      if (mounted && !widget.isGroup) setState(() => _isBlocked = true);
+      if (!widget.isGroup) {
+        // Engellenen kişinin mesajları solda kalsın, sohbet yine yüklensin
+        await _fetchMessages();
+      }
+    }
   }
 
   Future<void> _fetchMessages() async {
@@ -723,10 +787,16 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     try {
       final path = await _audioRecorder.stop();
       setState(() => _isRecording = false);
-      if (path != null) {
+            if (path != null) {
         final bytes = await File(path).readAsBytes();
-        final base64Audio = "data:audio/m4a;base64,${base64Encode(bytes)}";
-        _sendMessage(audioUrl: base64Audio);
+        try {
+          final base64Audio = ImageUtils.encodeDataUrl('audio/m4a', bytes);
+          _sendMessage(audioUrl: base64Audio);
+        } on ImageTooLargeException catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.orange));
+        }
       }
     } catch (e) {
       debugPrint("Kayıt durdurma hatası: $e");
@@ -792,15 +862,24 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   }
 
   Future<void> _sendImage() async {
-    final picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 800);
-    
-    if (image != null) {
-      setState(() => _isUploadingImage = true);
-      final bytes = await image.readAsBytes();
-      final base64Image = "data:image/jpeg;base64,${base64Encode(bytes)}";
+    // Ortak yardımcı: sıkıştırır + ~1,5 MB sınırını denetler (ImageUtils).
+    late final String? base64Image;
+    try {
+      base64Image = await ImageUtils.pickAsBase64(maxWidth: 800, imageQuality: 40);
+    } on ImageTooLargeException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.orange));
+      return;
+    }
+    if (base64Image == null) return; // kullanıcı vazgeçti
+
+    if (!mounted) return;
+    setState(() => _isUploadingImage = true);
+    try {
       await _sendMessage(imageUrl: base64Image);
-      setState(() => _isUploadingImage = false);
+    } finally {
+      if (mounted) setState(() => _isUploadingImage = false);
     }
   }
 
@@ -962,6 +1041,28 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                     _deleteMessage(msg['id']);
                   },
                 ),
+                              // YENİ: Şikayet Et (her mesaj için)
+              ListTile(
+                leading: const Icon(Icons.report_gmailerrorred, color: Colors.orangeAccent),
+                title: Text('report'.tr() ?? 'Şikayet Et', style: const TextStyle(color: Colors.orangeAccent)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  showReportDialog(context, targetType: 'MESSAGE', targetId: msg['id'].toString());
+                },
+              ),
+              // YENİ: Kullanıcıyı Engelle / Engeli Kaldır (kendi mesajın değilse)
+              if (!isMe)
+                ListTile(
+                  leading: Icon(_isBlocked ? Icons.lock_open : Icons.block, color: Colors.redAccent),
+                  title: Text(
+                    _isBlocked ? ('unblock_user'.tr() ?? 'Engeli Kaldır') : ('block_user'.tr() ?? 'Kullanıcıyı Engelle'),
+                    style: const TextStyle(color: Colors.redAccent),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _toggleBlock(msg['senderId'].toString());
+                  },
+                ),
             ],
           ),
         );
@@ -1026,7 +1127,30 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                     ],
                   ),
                 ),
-              
+                            // YENİ: Engelli kullanıcı uyarı bandı
+              if (_isBlocked && !widget.isGroup)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  color: Colors.red.withOpacity(0.12),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.block, color: Colors.redAccent, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'chat_blocked_banner'.tr() ?? 'Bu kullanıcı engellendi. Mesaj gönderemezsiniz.',
+                          style: const TextStyle(color: Colors.redAccent, fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => _toggleBlock(widget.id),
+                        child: Text('unblock_user'.tr() ?? 'Engeli Kaldır', style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
+                      ),
+                    ],
+                  ),
+                ),
+
               Expanded(
                 child: _isLoading 
                   ? const Center(child: CircularProgressIndicator())

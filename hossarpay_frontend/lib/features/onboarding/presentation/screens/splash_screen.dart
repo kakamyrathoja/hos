@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../auth/providers/auth_provider.dart';
+import '../../../../core/network/token_storage.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -21,12 +22,13 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   Future<void> _checkRouting() async {
     // Logoyu 1.5 saniye ekranda tut (Premium hissiyat)
     await Future.delayed(const Duration(milliseconds: 1500));
-    
+
     if (!mounted) return;
 
     final prefs = await SharedPreferences.getInstance();
     final hasSeenOnboarding = prefs.getBool('seen_onboarding') ?? false;
-    final token = prefs.getString('token');
+    // Tek kaynak: TokenStorage (ApiClient ile aynı anahtar)
+    final token = await TokenStorage.readToken();
 
     if (!hasSeenOnboarding) {
       context.go('/onboarding');

@@ -149,20 +149,20 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
               ],
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.grey))),
+              TextButton(onPressed: () => Navigator.pop(ctx), child: Text('cancel'.tr() ?? 'İptal', style: const TextStyle(color: Colors.grey))),
               ElevatedButton(
                 onPressed: isProcessing ? null : () async {
                   final phoneText = accountCtrl.text.trim();
                   if (phoneText.isEmpty || amountCtrl.text.isEmpty) return;
                   if (phoneText.length != 8) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Telefon numarası tam 8 haneli olmalıdır.'), backgroundColor: Colors.red));
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('phone_must_8'.tr() ?? 'Telefon numarası tam 8 haneli olmalıdır.'), backgroundColor: Colors.red));
                     return;
                   }
 
                   if (isMobile) {
                     bool isValidPrefix = _validMobilePrefixes.any((prefix) => phoneText.startsWith(prefix));
                     if (!isValidPrefix) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Geçersiz numara! Kod 61, 62, 63, 64, 65, 71 veya 72 ile başlamalıdır.'), backgroundColor: Colors.red));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('phone_prefix_error'.tr() ?? 'Geçersiz numara! Kod 61, 62, 63, 64, 65, 71 veya 72 ile başlamalıdır.'), backgroundColor: Colors.red));
                       return;
                     }
                   }
@@ -175,7 +175,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                       'targetAccount': '+993$phoneText',
                       'amount': int.parse(amountCtrl.text.trim()) 
                     });
-                    _onSuccessPurchase(ctx, 'Töleg üstünlikli iberildi!');
+                    _onSuccessPurchase(ctx, 'payment_success'.tr() ?? 'Ödeme başarıyla gönderildi!');
                   } catch (e) {
                     setModalState(() => isProcessing = false);
                     _onErrorPurchase(ctx, e);
@@ -230,7 +230,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
               ],
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.grey))),
+              TextButton(onPressed: () => Navigator.pop(ctx), child: Text('cancel'.tr() ?? 'İptal', style: const TextStyle(color: Colors.grey))),
               ElevatedButton(
                 onPressed: isProcessing ? null : () async {
                   final phoneText = accountCtrl.text.trim();
@@ -244,7 +244,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                       'targetAccount': '+993 12 $phoneText',
                       'amount': int.parse(amountCtrl.text.trim()) 
                     });
-                    _onSuccessPurchase(ctx, 'Töleg üstünlikli iberildi!');
+                    _onSuccessPurchase(ctx, 'payment_success'.tr() ?? 'Ödeme başarıyla gönderildi!');
                   } catch (e) {
                     setModalState(() => isProcessing = false);
                     _onErrorPurchase(ctx, e);
@@ -296,7 +296,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                   controller: minuteCtrl, 
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: InputDecoration(labelText: 'Näçe minut (Dakika)'),
+                  decoration: InputDecoration(labelText: 'minutes_label'.tr() ?? 'Kaç Dakika'),
                   onChanged: (val) {
                     setModalState(() {
                       enteredMins = int.tryParse(val) ?? 0;
@@ -311,7 +311,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Jemi töleg:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text('total_amount'.tr() ?? 'Toplam Ödeme:', style: const TextStyle(fontWeight: FontWeight.bold)),
                       Text('${totalTmt.toStringAsFixed(2)} TMT', style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).primaryColor, fontSize: 18)),
                     ],
                   ),
@@ -319,7 +319,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
               ],
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.grey))),
+              TextButton(onPressed: () => Navigator.pop(ctx), child: Text('cancel'.tr() ?? 'İptal', style: const TextStyle(color: Colors.grey))),
               ElevatedButton(
                 onPressed: isProcessing ? null : () async {
                   final phoneText = accountCtrl.text.trim();
@@ -333,7 +333,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                       'targetAccount': '00 $phoneText ($enteredMins Minut)',
                       'amount': totalTmt 
                     });
-                    _onSuccessPurchase(ctx, 'Töleg üstünlikli iberildi!');
+                    _onSuccessPurchase(ctx, 'payment_success'.tr() ?? 'Ödeme başarıyla gönderildi!');
                   } catch (e) {
                     setModalState(() => isProcessing = false);
                     _onErrorPurchase(ctx, e);
@@ -364,35 +364,35 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Haýsy usul arkaly ulanýarsyňyz', style: TextStyle(color: Colors.grey, fontSize: 14)),
+              Text('payment_method_label'.tr() ?? 'Hangi yöntemi kullanıyorsunuz', style: const TextStyle(color: Colors.grey, fontSize: 14)),
               SizedBox(height: 16),
               
               _buildAlemTVOption(
                 icon: Icons.credit_card, iconColor: Colors.black,
-                title: 'ÄlemTV (kart)', subtitle: '2100****** başlaýan kart nomeri arkaly tölemeli',
+                title: 'alemtv_card'.tr() ?? 'ÄlemTV (Kart)', subtitle: 'alemtv_card_sub'.tr() ?? '2100****** ile başlayan kart numarasıyla ödeme yapın',
                 onTap: () {
                   Navigator.pop(ctx);
-                  _showAlemTVInput(service, 'ÄlemTV (kart)', '2100', 6, 'Kart belgisi', TextInputType.number, true);
+                  _showAlemTVInput(service, 'alemtv_card'.tr() ?? 'ÄlemTV (Kart)', '2100', 6, 'card_number_label'.tr() ?? 'Kart Numarası', TextInputType.number, true);
                 }
               ),
               SizedBox(height: 12),
               
               _buildAlemTVOption(
                 icon: Icons.wifi, iconColor: Colors.blueAccent,
-                title: 'Telekom ÄlemTV', subtitle: 'Öý telefon nomeri arkaly tölemeli',
+                title: 'alemtv_telecom'.tr() ?? 'Telekom ÄlemTV', subtitle: 'alemtv_telecom_sub'.tr() ?? 'Ev telefonu numarasıyla ödeme yapın',
                 onTap: () {
                   Navigator.pop(ctx);
-                  _showAlemTVInput(service, 'Telekom ÄlemTV', '+993 ', 8, 'Telefon belgisi', TextInputType.number, true);
+                  _showAlemTVInput(service, 'alemtv_telecom'.tr() ?? 'Telekom ÄlemTV', '+993 ', 8, 'phone_label'.tr() ?? 'Telefon Numarası', TextInputType.number, true);
                 }
               ),
               SizedBox(height: 12),
               
               _buildAlemTVOption(
                 icon: Icons.satellite_alt, iconColor: Colors.green,
-                title: 'ÄlemTV (dalem-)', subtitle: 'Loginyňyz "dalem-" bilen başlaýan bolsa',
+                title: 'alemtv_dalem'.tr() ?? 'ÄlemTV (dalem-)', subtitle: 'alemtv_dalem_sub'.tr() ?? 'Giriş bilgileriniz "dalem-" ile başlıyorsa',
                 onTap: () {
                   Navigator.pop(ctx);
-                  _showAlemTVInput(service, 'ÄlemTV (dalem-)', 'dalem-', 15, 'Hasap belgi', TextInputType.text, false);
+                  _showAlemTVInput(service, 'alemtv_dalem'.tr() ?? 'ÄlemTV (dalem-)', 'dalem-', 15, 'account_label'.tr() ?? 'Hesap No', TextInputType.text, false);
                 }
               ),
               SizedBox(height: 24), 
@@ -476,7 +476,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
               ],
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.grey))),
+              TextButton(onPressed: () => Navigator.pop(ctx), child: Text('cancel'.tr() ?? 'İptal', style: const TextStyle(color: Colors.grey))),
               ElevatedButton(
                 onPressed: isProcessing ? null : () async {
                   final phoneText = accountCtrl.text.trim();
@@ -490,7 +490,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                       'targetAccount': '$prefix$phoneText',
                       'amount': int.parse(amountCtrl.text.trim()) 
                     });
-                    _onSuccessPurchase(ctx, 'Töleg üstünlikli iberildi!');
+                    _onSuccessPurchase(ctx, 'payment_success'.tr() ?? 'Ödeme başarıyla gönderildi!');
                   } catch (e) {
                     setModalState(() => isProcessing = false);
                     _onErrorPurchase(ctx, e);
@@ -527,7 +527,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Töleg maglumatlary', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                  Text('payment_info'.tr() ?? 'Ödeme Bilgileri', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
                   SizedBox(height: 24),
                   
                   InkWell(
@@ -541,7 +541,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                               AppBar(
                                 backgroundColor: Colors.transparent, elevation: 0,
                                 leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.pop(context)),
-                                title: const Text('Sebiti saýlaň', style: TextStyle(fontWeight: FontWeight.bold)),
+                                title: Text('region_select'.tr() ?? 'Bölge Seçin', style: const TextStyle(fontWeight: FontWeight.bold)),
                               ),
                               Expanded(
                                 child: ListView(
@@ -582,7 +582,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            selectedRegion == null ? 'Sebit saýlamak' : '${selectedRegion!['name']} (${selectedRegion!['code']})',
+                            selectedRegion == null ? 'region_not_selected'.tr() : '${selectedRegion!['name']} (${selectedRegion!['code']})',
                             style: TextStyle(fontSize: 16, color: selectedRegion == null ? Colors.grey : (Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black)),
                           ),
                           const Icon(Icons.keyboard_arrow_down, color: Colors.grey),
@@ -596,7 +596,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                     controller: phoneCtrl,
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(5)],
-                    decoration: InputDecoration(labelText: 'Alyjynyň telefon belgisi', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                    decoration: InputDecoration(labelText: 'receiver_phone_label'.tr() ?? 'Alıcının Telefon Numarası', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
                   ),
                   SizedBox(height: 16),
 
@@ -604,7 +604,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                     controller: amountCtrl,
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: InputDecoration(labelText: 'Mukdary TMT', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                    decoration: InputDecoration(labelText: 'amount_tmt_label'.tr() ?? 'Miktar (TMT)', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
                   ),
                   SizedBox(height: 32),
 
@@ -614,7 +614,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                       onPressed: isProcessing ? null : () async {
                         if (selectedRegion == null || phoneCtrl.text.isEmpty || amountCtrl.text.isEmpty) return;
                         if (phoneCtrl.text.length != 5) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Telefon numarası tam 5 haneli olmalıdır.'), backgroundColor: Colors.red));
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('phone_must_5'.tr() ?? 'Telefon numarası tam 5 haneli olmalıdır.'), backgroundColor: Colors.red));
                           return;
                         }
                         setModalState(() => isProcessing = true);
@@ -625,7 +625,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                             'targetAccount': '${selectedRegion!['name']} (${selectedRegion!['code']}) - ${phoneCtrl.text.trim()}',
                             'amount': int.parse(amountCtrl.text.trim()),
                           });
-                          _onSuccessPurchase(ctx, 'Töleg üstünlikli iberildi!');
+                          _onSuccessPurchase(ctx, 'payment_success'.tr() ?? 'Ödeme başarıyla gönderildi!');
                         } catch (e) {
                           setModalState(() => isProcessing = false);
                           _onErrorPurchase(ctx, e);
@@ -653,7 +653,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
 
     final packages = [
       {'label': '50 Mb', 'price': 4, 'note': null}, {'label': '100 Mb', 'price': 6, 'note': null},
-      {'label': '250 Mb', 'price': 11, 'note': null}, {'label': '500 Mb', 'price': 16, 'note': '(diňe sowgat 2000 nyrhnamada hereket edýär)'},
+      {'label': '250 Mb', 'price': 11, 'note': null}, {'label': '500 Mb', 'price': 16, 'note': 'gb_note_500'.tr()},
       {'label': '1.5 Gb', 'price': 62, 'note': null}, {'label': '4 Gb', 'price': 160, 'note': null},
       {'label': '20 Gb', 'price': 203, 'note': null},
     ];
@@ -751,7 +751,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                         if (phoneText.length != 8 || selectedPackageIndex == null) return;
                         bool isValidPrefix = _validMobilePrefixes.any((prefix) => phoneText.startsWith(prefix));
                         if (!isValidPrefix) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Geçersiz numara! Kod 61, 62, 63, 64, 65, 71 veya 72 ile başlamalıdır.'), backgroundColor: Colors.red));
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('phone_prefix_error'.tr() ?? 'Geçersiz numara! Kod 61, 62, 63, 64, 65, 71 veya 72 ile başlamalıdır.'), backgroundColor: Colors.red));
                           return;
                         }
                         setModalState(() => isProcessing = true);
@@ -762,13 +762,13 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                             'targetAccount': '+993$phoneText (${packages[selectedPackageIndex!]['label']})',
                             'amount': packages[selectedPackageIndex!]['price'],
                           });
-                          _onSuccessPurchase(ctx, 'Paket talebi başarıyla iletildi!');
+                          _onSuccessPurchase(ctx, 'package_request_sent'.tr() ?? 'Paket talebi başarıyla iletildi!');
                         } catch (e) {
                           setModalState(() => isProcessing = false);
                           _onErrorPurchase(ctx, e);
                         }
                       },
-                      child: isProcessing ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : Text(selectedPackageIndex == null ? 'Paket Saýlaň' : 'Tassyklamak (${packages[selectedPackageIndex!]['price']} TMT)', style: const TextStyle(fontSize: 16)),
+                      child: isProcessing ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : Text(selectedPackageIndex == null ? 'select_package_btn'.tr() ?? 'Paket Seçin' : 'confirm_with_price'.tr(namedArgs: {'price': '${packages[selectedPackageIndex!]['price']}'}), style: const TextStyle(fontSize: 16)),
                     ),
                   ),
                 ],

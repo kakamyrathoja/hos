@@ -1,4 +1,3 @@
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -16,8 +15,6 @@ class RegisterScreen extends ConsumerStatefulWidget {
 class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final fnameCtrl = TextEditingController();
   final lnameCtrl = TextEditingController();
-  final nickCtrl = TextEditingController();
-  final phoneCtrl = TextEditingController();
   final passCtrl = TextEditingController();
   final emailCtrl = TextEditingController();
   final refCtrl = TextEditingController();
@@ -46,7 +43,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   Future<void> _sendCode() async {
     final email = emailCtrl.text.trim();
     if (!email.contains('@')) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lütfen geçerli bir e-posta girin.'), backgroundColor: Colors.redAccent));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('invalid_email'.tr() ?? 'Lütfen geçerli bir e-posta girin.'), backgroundColor: Colors.redAccent));
       return;
     }
     
@@ -60,34 +57,33 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         _isSendingCode = false;
       });
       _startTimer();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Doğrulama kodu e-postanıza gönderildi.'), backgroundColor: Colors.green));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('code_sent'.tr() ?? 'Doğrulama kodu e-postanıza gönderildi.'), backgroundColor: Colors.green));
     } catch (e) {
       setState(() { _isSendingCode = false; });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kod gönderilemedi. Bu e-posta kullanımda olabilir.'), backgroundColor: Colors.redAccent));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('code_failed'.tr() ?? 'Kod gönderilemedi. Bu e-posta kullanımda olabilir.'), backgroundColor: Colors.redAccent));
     }
   }
 
   void _register() {
     final fname = fnameCtrl.text.trim();
     final lname = lnameCtrl.text.trim();
-    final nick = nickCtrl.text.trim();
     final email = emailCtrl.text.trim();
     final pass = passCtrl.text.trim();
     final refCode = refCtrl.text.trim();
     final code = codeCtrl.text.trim();
 
-    if (fname.isEmpty || lname.isEmpty || nick.isEmpty || email.isEmpty || pass.isEmpty) {
+    if (fname.isEmpty || lname.isEmpty || email.isEmpty || pass.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('fill_all_fields'.tr()), backgroundColor: Colors.redAccent));
       return;
     }
     
     if (!_isCodeSent) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lütfen e-postanızı doğrulayın!'), backgroundColor: Colors.redAccent));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('verify_email'.tr() ?? 'Lütfen e-postanızı doğrulayın!'), backgroundColor: Colors.redAccent));
       return;
     }
     
     if (code.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lütfen size gönderilen kodu girin.'), backgroundColor: Colors.redAccent));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('enter_code'.tr() ?? 'Lütfen size gönderilen kodu girin.'), backgroundColor: Colors.redAccent));
       return;
     }
 
@@ -102,8 +98,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       return;
     }
 
-    // Telefon numarasi bos gidiyor, profil kismindan guncellenecek. Ref kodu bos (istege bagli) gidebilir.
-    ref.read(authProvider.notifier).registerAdvanced(fname, lname, nick, pass, email, refCode, code);
+    // Takma ad kayıtta istenmez; profilden eklenecek. Telefon numarasi bos gidiyor, profil kismindan guncellenecek.
+    ref.read(authProvider.notifier).registerAdvanced(fname, lname, null, pass, email, refCode, code);
   }
 
   void _googleSignIn() {
@@ -192,18 +188,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             ),
                           ),
                           Divider(height: 1, color: Colors.grey.withOpacity(0.2), indent: 16, endIndent: 16),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-                            child: TextField(
-                              controller: nickCtrl,
-                              decoration: InputDecoration(
-                                labelText: 'nickname'.tr() ?? 'Kullanıcı Adı',
-                                prefixIcon: Icon(Icons.alternate_email, color: Theme.of(context).primaryColor),
-                                border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none,
-                              ),
-                            ),
-                          ),
-                          Divider(height: 1, color: Colors.grey.withOpacity(0.2), indent: 16, endIndent: 16),
                           
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
@@ -214,7 +198,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                                     controller: emailCtrl,
                                     keyboardType: TextInputType.emailAddress,
                                     decoration: InputDecoration(
-                                      labelText: 'E-mail',
+                                      labelText: 'email_label'.tr() ?? 'E-posta',
                                       prefixIcon: Icon(Icons.email_outlined, color: Theme.of(context).primaryColor),
                                       border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none,
                                     ),
@@ -226,7 +210,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                                     onPressed: (_isCodeSent && _countdown > 0) || _isSendingCode ? null : _sendCode,
                                     child: _isSendingCode 
                                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                                      : Text((_isCodeSent && _countdown > 0) ? '$_countdown s' : 'Kod Gönder'),
+                                      : Text((_isCodeSent && _countdown > 0) ? 'countdown_s'.tr(namedArgs: {'s': '$_countdown'}) : 'code_send'.tr() ?? 'Kod Gönder'),
                                   ),
                                 )
                               ],
@@ -241,7 +225,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                                 controller: codeCtrl,
                                 keyboardType: TextInputType.number,
                                 decoration: InputDecoration(
-                                  labelText: 'Doğrulama Kodu',
+                                  labelText: 'code_label'.tr() ?? 'Doğrulama Kodu',
                                   prefixIcon: Icon(Icons.verified_user_outlined, color: Theme.of(context).primaryColor),
                                   border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none,
                                 ),
@@ -279,7 +263,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         children: [
                           Icon(_showRefCode ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 16, color: Colors.grey.shade600),
                           const SizedBox(width: 4),
-                          Text('Davet Kodunuz Var mı? (İsteğe Bağlı)', style: TextStyle(color: Colors.grey.shade600, fontSize: 13, fontWeight: FontWeight.bold)),
+                          Text('referral_title'.tr() ?? 'Davet Kodunuz Var mı? (İsteğe Bağlı)', style: TextStyle(color: Colors.grey.shade600, fontSize: 13, fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ),
@@ -293,7 +277,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         child: TextField(
                           controller: refCtrl,
                           decoration: InputDecoration(
-                            hintText: 'Kodu buraya girin',
+                            hintText: 'referral_hint'.tr() ?? 'Kodu buraya girin',
                             filled: true,
                             fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
                             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
@@ -332,8 +316,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                           side: BorderSide(color: Colors.grey.withOpacity(0.3)),
                         ),
                         onPressed: _googleSignIn,
-                        icon: const FaIcon(FontAwesomeIcons.google, color: Colors.redAccent, size: 20),
-                        label: Text('Google ile Devam Et', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Theme.of(context).textTheme.bodyMedium?.color)),
+                        icon: Image.asset('assets/images/google_g.png', width: 20, height: 20),
+                        label: Text('google_continue'.tr() ?? 'Google ile Devam Et', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Theme.of(context).textTheme.bodyMedium?.color)),
                       ),
                     ),
                   ],

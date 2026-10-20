@@ -3,7 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:dio/dio.dart';
-import 'package:image_picker/image_picker.dart';
+import '../../../../core/utils/image_utils.dart';
 import 'dart:convert';
 import '../../../../core/network/api_client.dart';
 import '../../../home/providers/home_data_provider.dart';
@@ -80,14 +80,19 @@ class _NewChatScreenState extends ConsumerState<NewChatScreen> {
       builder: (ctx) => StatefulBuilder(builder: (context, setModalState) {
         
         Future<void> pickGroupImage() async {
-          final picker = ImagePicker();
-          final XFile? image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 40, maxWidth: 600);
-          if (image != null) {
-            final bytes = await image.readAsBytes();
-            setModalState(() {
-              base64GroupImage = "data:image/jpeg;base64,${base64Encode(bytes)}";
-            });
+          // Ortak yardımcı: sıkıştırır + ~1,5 MB sınırını denetler (ImageUtils).
+          late final String? picked;
+          try {
+            picked = await ImageUtils.pickAsBase64(maxWidth: 600, imageQuality: 40);
+          } on ImageTooLargeException catch (e) {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.orange));
+            return;
           }
+          if (picked == null) return; // kullanıcı vazgeçti
+          setModalState(() {
+            base64GroupImage = picked;
+          });
         }
 
         Future<void> searchUserForGroup() async {
@@ -220,12 +225,12 @@ class _NewChatScreenState extends ConsumerState<NewChatScreen> {
                         const SizedBox(height: 16),
                       ],
 
-                      const Text('Üye Ekle', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text('add_member_title'.tr() ?? 'Üye Ekle', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                       const SizedBox(height: 8),
                       TextField(
                         controller: groupSearchCtrl,
                         decoration: InputDecoration(
-                          hintText: 'Numara veya Takma Ad',
+                          hintText: 'search_member_hint'.tr() ?? 'Numara veya Takma Ad',
                           suffixIcon: IconButton(
                             icon: isSearchingGroupUser ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.search),
                             onPressed: searchUserForGroup,
@@ -256,12 +261,12 @@ class _NewChatScreenState extends ConsumerState<NewChatScreen> {
                       ],
                       
                       const SizedBox(height: 32),
-                      const Text('Rehberindeki Kişiler', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text('contacts_title'.tr() ?? 'Rehberindeki Kişiler', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                       const SizedBox(height: 8),
                       Consumer(
                         builder: (context, ref, _) {
                           final contacts = ref.watch(contactProvider);
-                          if (contacts.isEmpty) return const Text('Rehberinizde Hossarpay kullanan kimse bulunamadı.', style: TextStyle(color: Colors.grey));
+                          if (contacts.isEmpty) return Text('no_contacts_hint'.tr() ?? 'Rehberinizde Hossarpay kullanan kimse bulunamadı.', style: const TextStyle(color: Colors.grey));
                           
                           return ListView.builder(
                             shrinkWrap: true,
@@ -308,7 +313,7 @@ class _NewChatScreenState extends ConsumerState<NewChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Yeni Sohbet', style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text('new_chat'.tr() ?? 'Yeni Sohbet', style: const TextStyle(fontWeight: FontWeight.bold)),
         elevation: 0,
         backgroundColor: Colors.transparent,
       ),
