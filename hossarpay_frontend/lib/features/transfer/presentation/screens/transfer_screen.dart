@@ -239,14 +239,13 @@ class _TransferScreenState extends ConsumerState<TransferScreen> {
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-               Lottie.asset(
+                Lottie.asset(
                   'assets/lottie/success.json',
-                  errorBuilder: (context, error, stackTrace) => const Icon(Icons.check_circle, color: Colors.green, size: 100),
                   width: 150,
                   height: 150,
-                  repeat: false,
-                  errorBuilder: (context, error, stackTrace) =>
-                      const Icon(Icons.check_circle, color: Colors.green, size: 100),
+                  errorBuilder: (context, error, stackTrace) {
+                   return const Icon(Icons.check_circle, color: Colors.green, size: 100);
+                  },
                 ),
                 const SizedBox(height: 16),
                 Text('transfer_success'.tr(),
